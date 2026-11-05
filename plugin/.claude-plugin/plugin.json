@@ -1,0 +1,5 @@
+{
+  "name": "find-tool",
+  "version": "1.0.0",
+  "description": "Find installed command-line tools by intent (Moss semantic search)."
+}
