@@ -1,0 +1,9 @@
+#!/bin/sh
+# find-tool "<what you want to do>": the 5 most relevant installed tools (distinct), via `moss query`.
+# Needs MOSS_PROJECT_ID / MOSS_PROJECT_KEY for the project holding the index.
+# Queries 20 docs and keeps the first 5 distinct tools (tools with many subcommands would otherwise fill all 5).
+[ -n "$1" ] || { echo 'usage: find-tool "<what you want to do>"' >&2; exit 2; }
+moss --json query "${FIND_TOOL_INDEX:-find-tool}" "$*" -k 20 | jq -r '
+  reduce .docs[] as $d ([]; if any(.[]; .metadata.name == $d.metadata.name) then . else . + [$d] end)
+  | .[:5][]
+  | "\(.metadata.name)\(if .metadata.sub then " " + .metadata.sub else "" end) (\(.metadata.kind)): \(.text | .[0:160])"'
