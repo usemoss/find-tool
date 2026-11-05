@@ -1,0 +1,30 @@
+keep the laptop from going to sleep while a long job runs	caffeinate
+put text onto the clipboard from a script	pbcopy
+read text out loud	say
+find files by content using the spotlight index	mdfind
+resize or convert an image from the terminal	sips,ffmpeg
+convert a word document to plain text or html	textutil,markitdown
+show which process is holding a port open	lsof
+measure my internet upload and download speed	networkQuality
+take a screenshot from the command line	screencapture
+compute a sha256 checksum of a file	shasum,openssl
+remove the quarantine flag from a downloaded app	xattr
+change a hidden macOS preference setting	defaults
+play an audio file without opening an app	afplay,ffplay,mpg123
+extract a field from json output	jq,yq
+edit yaml documents with a query language	yq
+transcribe speech from an audio file into text	whisper-cli,parakeet-cli
+record a terminal session as an animated gif	vhs
+render markdown nicely in the terminal	glow
+show an image inside the terminal	viu
+download a video from youtube	yt-dlp
+find code by syntax pattern instead of plain text	sg,ast-grep
+lint and format python code	ruff,pylint
+find unused python code	vulture
+search file contents recursively very fast	rg
+display a directory as a tree	tree
+convert pdf or office files to markdown	markitdown
+manage python versions and virtual environments	uv,mise
+open a review of pull requests and issues on github	gh
+run a local large language model	ollama
+share a terminal over the web in a browser	ttyd
