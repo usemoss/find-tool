@@ -79,16 +79,17 @@ fair control for cost is `controlsk` (Skill tool, no find-tool), not bare Bash.
 M=claude-sonnet-5-5
 python3 bench/agent_run.py base      --tag sonnet-evalset --model $M   # no tools: answer from memory
 python3 bench/agent_run.py controlsk --tag sonnet-evalset --model $M   # misses, read-only shell
-python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M --skill v4 --suffix=-v4
+python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M
 python3 bench/agent_run.py controlsk --tag sonnet-evalset --model $M --on hits --n 26 --suffix=-hits
-python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M --skill v4 --on hits --n 26 --suffix=-v4-hits
+python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M --on hits --n 26 --suffix=-hits
 ```
 
 Stages after `base` run only on base misses (`--on misses`) or a sample of base hits (`--on hits`, to measure the
 cost of using the skill when it isn't needed). Each run records the final command, whether it's correct, commands
 executed, whether find-tool ran, tokens and cost. Results: `bench/runs/<tag>/<stage>.jsonl`.
 
-`skill-versions/` holds the four skill descriptions that were compared:
+The `skill` stage uses the shipped plugin (`plugin/`); pass `--plugin DIR` to benchmark a copy with different
+wording. Four skill descriptions were compared before choosing the shipped one (v4):
 
 | Version | Description style | Outcome |
 |---|---|---|

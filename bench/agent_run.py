@@ -4,7 +4,7 @@ Stages (all share one prompt shape; the agent must end with `COMMAND: <cmd>` and
   base     NO tools: the model names the command from its own knowledge (run on every task)
   control  Bash, read-only inspection only (no find-tool)
   controlsk  control + the Skill tool with Claude Code's built-in skills (no find-tool): token/cost parity with `skill`
-  skill    Bash + find-tool on PATH + the find-tool skill (`--skill v1..v4`, see bench/skill-versions/), neutral prompt
+  skill    Bash + find-tool on PATH + the find-tool skill (`--plugin DIR`, default plugin/), neutral prompt
   forced   like skill, but the prompt says to run find-tool first
 Non-base stages run on the tasks selected by `--on` from this tag's base results: misses (default), hits, or all.
 
@@ -18,7 +18,7 @@ Output: bench/runs/<tag>/<stage><suffix>.jsonl (+ raw stream-json per task in be
 Usage (load ANTHROPIC_API_KEY from bench/.env, MOSS_PROJECT_ID/KEY from .env):
   python3 bench/agent_run.py base    --tag sonnet-evalset --model claude-sonnet-5-5 [--tasks eval-set.tsv]
   python3 bench/agent_run.py control --tag sonnet-evalset --model claude-sonnet-5-5
-  python3 bench/agent_run.py skill   --tag sonnet-evalset --skill v4 [--on hits --n 26 --suffix=-v4-hits]
+  python3 bench/agent_run.py skill   --tag sonnet-evalset [--plugin DIR] [--on hits --n 26 --suffix=-hits]
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ ROOT = HERE.parent
 RUNS = HERE / "runs"
 CWD = RUNS / "cwd"  # empty git repo the agent works in
 HOME = RUNS / "home-empty"
-PLUGINS = HERE / "skill-versions"  # v1..v4 skill plugins benchmarked against each other
 PROMPT = """Task: {task}
 
 Give the single shell command, for this macOS machine, that accomplishes the task, using a tool that is installed here.
@@ -76,7 +75,7 @@ def used_commands(cmd: str) -> set[str]:
 
 
 def run(
-    task: str, stage: str, raw_dir: Path, n: int, model: str, skill: str, budget: float
+    task: str, stage: str, raw_dir: Path, n: int, model: str, plugin: Path, budget: float
 ) -> dict:
     env = {k: v for k, v in os.environ.items() if not k.startswith("MOSS_")}
     env |= {"HOME": str(HOME), "CLAUDE_CONFIG_DIR": str(HOME / ".claude")}
@@ -109,7 +108,7 @@ def run(
             "--tools",
             "Bash,Skill",
             "--plugin-dir",
-            str(PLUGINS / skill),
+            str(plugin),
             "--allowedTools",
             *ALLOW,
             "Bash(find-tool:*)",
@@ -181,7 +180,10 @@ def main() -> None:
         "--tasks", default="eval-set.tsv", help="intent<TAB>tool[,tool] file in bench/"
     )
     ap.add_argument(
-        "--skill", default="v4", choices=sorted(p.name for p in PLUGINS.iterdir())
+        "--plugin",
+        type=Path,
+        default=ROOT / "plugin",
+        help="skill plugin dir (skill/forced stages); point at a copy to test other wording",
     )
     ap.add_argument(
         "--on",
@@ -230,7 +232,7 @@ def main() -> None:
                     out_dir / name,
                     i,
                     args.model,
-                    args.skill,
+                    args.plugin.resolve(),
                     args.budget,
                 ),
                 todo,
@@ -242,7 +244,7 @@ def main() -> None:
             r |= {
                 "want": sorted(want),
                 "hit": bool(want & used_commands(r["command"])),
-                "skill": args.skill,
+                "plugin": str(args.plugin),
             }
             f.write(json.dumps(r) + "\n")
     n = len(res)
