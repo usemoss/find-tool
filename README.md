@@ -9,26 +9,29 @@ Find the right command-line tool **installed on your machine** by describing wha
   src="https://github.com/user-attachments/assets/0af14c9c-9764-453f-b5c2-b3d5b34784c5"
 />
 
-`find-tool` indexes every executable on your `$PATH` (man pages, `--help`, package descriptions, subcommands) and
+> `find-tool` indexes every executable on your `$PATH` (man pages, `--help`, package descriptions, subcommands) and
 your installed agent skills into a [Moss](https://moss.dev) semantic search index, and answers with the 5 most
 relevant tools via the [Moss CLI](https://docs.moss.dev/docs/integrations/moss-cli).
 
-It matters most for **coding agents**: a model can't know the CLIs you or your team wrote, and often doesn't know
+<details><summary><b>Coding Agents</b></summary>
+
+A model can't know the CLIs you or your team wrote, and often doesn't know
 which niche tools you have. The bundled Claude Code skill makes the agent run one `find-tool` lookup instead of
 guessing.
 
+</details>
+
 ## Benchmark results
 
-Measured on one macOS machine (~1,500 executables). Details, methodology, significance tests and caveats are in
-[`bench/`](bench/README.md).
+Measured on one macOS machine (~1,500 executables).
 
-**Agents.** Headless Claude Code named the best installed tool for each task, either from memory or after one
-`find-tool` lookup (3 runs per task; answers outside the accepted list were checked by a blind judge):
+**Agents**: Headless Claude Code named the best installed tool for each task, either from memory or after one
+`find-tool` lookup (3 runs per task; answers outside the accepted tool list were checked by a blind judge):
 
 | Tasks | Model | From memory | One `find-tool` lookup |
 |---|---|---|---|
-| CLIs the machine's owner wrote (3 tasks) | Haiku 5.5 and Sonnet 5.5 | 3 of 9 runs | **9 of 9** |
-| Niche and unfamiliar tools (29 tasks) | Sonnet 5.5 | 60 of 87 | **87 of 87** |
+| Owner CLI tools (3 tasks) | Haiku 5.5 and Sonnet 5.5 | 3 of 9 runs | **9 of 9** |
+| Niche and uncommon tools (29 tasks) | Sonnet 5.5 | 60 of 87 | **87 of 87** |
 | | Haiku 5.5 | 59 of 87 | **80 of 87** |
 | Public CLIs from tldr / NL2SH-ALFA (152 tasks) | Sonnet 5.5 | 422 of 456 | **441 of 456** |
 | | Haiku 5.5 | 420 of 456 | 435 of 456 |
@@ -38,28 +41,44 @@ The gain is largest for tools a model can't know (your own and niche CLIs) and s
 **Retrieval.** On the 152 public tasks, `find-tool` had an acceptable tool in its top 5 for 114 (median rank 2);
 `apropos` had one somewhere in its output for 115, but you'd read a median of 1,323 unranked lines to find it.
 
+> [!NOTE]
+> Details, methodology, significance tests and caveats are in [`bench/`](bench/README.md).
+
 ## Install
 
-Requires Python 3.9+, [`jq`](https://jqlang.org), the [Moss CLI](https://docs.moss.dev/docs/integrations/moss-cli)
-(`pip install moss-cli`) and a [Moss account (free)](https://portal.usemoss.dev/). Developed on macOS; Linux should
-work but is untested.
+Requires:
 
-1. **Moss credentials.** At https://portal.usemoss.dev, create a project and a project key (or `moss login`, then
-   `moss keys create --project <id>`). Then run `moss init` to save them to `~/.moss/config.json`, where `find-tool`
+- Python 3.9+
+- [`jq`](https://jqlang.org)
+- [Moss CLI](https://docs.moss.dev/docs/integrations/moss-cli) (`pip install moss-cli`)
+- [Moss account (free)](https://portal.usemoss.dev/).
+
+> [!NOTE]
+> Developed on macOS; Linux should work but is untested.
+
+1. **Moss credentials.**
+   - Login to https://portal.usemoss.dev
+   - create a project and a project key (or `moss login moss keys create --project <id>`)
+   
+   Then run `moss init` to save them to `~/.moss/config.json`, where `find-tool`
    and your agent's shell will find them. (Alternatively export `MOSS_PROJECT_ID` and `MOSS_PROJECT_KEY`; see
    `.env.example`.)
 
-2. **Build the index** (about a minute for ~1,500 tools):
+3. **Build the index** (about a minute for ~1,500 tools):
 
    ```sh
    git clone https://github.com/usemoss/find-tool && cd find-tool
+
+   # build CLI tool records
    python3 build.py --log help-calls.log > docs.json
+
+   # create Moss CLI tools index
    moss index create find-tool -f docs.json --wait
    ```
 
    After installing new tools, rebuild and run `moss doc add find-tool -f docs.json --upsert --wait`.
 
-3. **Claude Code plugin** (user scope, all projects). It adds the skill and puts `find-tool` on the agent's `PATH`:
+4. **Claude Code plugin** (user scope, all projects). It adds the skill and puts `find-tool` on the agent's `PATH`:
 
    ```sh
    claude plugin marketplace add usemoss/find-tool
@@ -70,7 +89,10 @@ work but is untested.
    `claude plugin update find-tool@find-tool`. To skip the permission prompt, allow `Bash(find-tool *)` in your
    settings.
 
-4. **On your own command line** (optional): `ln -s "$PWD/plugin/bin/find-tool" ~/.local/bin/find-tool`.
+5. **On your own command line** (optional):
+   ```sh
+   ln -s "$PWD/plugin/bin/find-tool" ~/.local/bin/find-tool
+   ```
 
 ## Usage
 
@@ -80,6 +102,8 @@ moss --json query find-tool "transcribe a WAV file to text" -k 20 | jq '.docs[].
 ```
 
 Each query takes 2–3 seconds (the Moss CLI loads the index on every call).
+
+## Env Config
 
 On a terminal, tool names are colored and each description is on its own line, fitted to the terminal width. When
 piped (scripts, agents), each tool is one line: `name [subcommand] (kind, path): description`. Options:
