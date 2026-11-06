@@ -1,24 +1,29 @@
 """Agent tool-choice benchmark: headless Claude Code with vs without find-tool.
 
-Stages (all share one prompt shape; the agent must end with `COMMAND: <cmd>` and never perform the task):
-  base     NO tools: the model names the command from its own knowledge (run on every task)
-  control  Bash, read-only inspection only (no find-tool)
-  controlsk  control + the Skill tool with Claude Code's built-in skills (no find-tool): token/cost parity with `skill`
-  skill    Bash + find-tool on PATH + the find-tool skill (`--plugin DIR`, default plugin/), neutral prompt
-  forced   like skill, but the prompt says to run find-tool first
-Non-base stages run on the tasks selected by `--on` from this tag's base results: misses (default), hits, or all.
+All stages share one prompt (find the best installed tool for the task, end with `TOOL: <name>`, never perform it).
 
-Isolation (verified): API-key auth, empty HOME and CLAUDE_CONFIG_DIR, `--setting-sources local`, `--strict-mcp-config`,
-and an empty git repo as the working directory, so no user/ancestor CLAUDE.md, hooks, plugins, MCP or repo status leak.
-State-changing commands are denied by `--permission-mode dontAsk`; read-only ones are auto-allowed.
-Scored a hit if any acceptable tool is a command word (also inside `$(...)`) of the final COMMAND line.
+Published design (single lookup):
+  base     no tools: the model names the tool from its own knowledge
+  lookup   only `find-tool "<text>"` may run (a hook denies every other command); if nothing fits, the agent
+           rephrases once, then falls back to its own knowledge
+Exploration stages (agent may search the machine with read-only commands; see bench/README.md for the caveats):
+  control    Bash, read-only probes only
+  controlsk  control + the Skill tool with Claude Code's built-in skills: token parity with `skill`
+  skill      Bash + find-tool on PATH + the find-tool skill (`--plugin DIR`, default plugin/)
+  forced     like skill, but the prompt says to run find-tool first
+Non-base stages run on all tasks with `--on all`, or on base misses/hits (`--on misses|hits`).
+
+Isolation: API-key auth, empty HOME and CLAUDE_CONFIG_DIR, `--setting-sources local`, `--strict-mcp-config`, and an
+empty git repo as the working directory, so no user/ancestor CLAUDE.md, hooks, plugins, MCP or repo status leak.
+`--permission-mode dontAsk` denies anything not allowed; denials are recorded per run. allow_loops.py (a PreToolUse
+hook) approves read-only probes that allow rules can't express, and in the lookup stage allows only find-tool.
+Scored a hit if an acceptable tool is a command word of the final TOOL line; judge.py checks other answers blindly.
 
 Output: bench/runs/<tag>/<stage><suffix>.jsonl (+ raw stream-json per task in bench/runs/<tag>/<stage><suffix>/<n>.jsonl)
 
 Usage (load ANTHROPIC_API_KEY from bench/.env, MOSS_PROJECT_ID/KEY from .env):
-  python3 bench/agent_run.py base    --tag sonnet-evalset --model claude-sonnet-5-5 [--tasks eval-set.tsv]
-  python3 bench/agent_run.py control --tag sonnet-evalset --model claude-sonnet-5-5
-  python3 bench/agent_run.py skill   --tag sonnet-evalset [--plugin DIR] [--on hits --n 26 --suffix=-hits]
+  python3 bench/agent_run.py base   --tag haiku-mine --model claude-haiku-5-5 --tasks mine.tsv --on all --suffix=-r1
+  python3 bench/agent_run.py lookup --tag haiku-mine --model claude-haiku-5-5 --tasks mine.tsv --on all --suffix=-r1
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ import json
 import os
 import random
 import re
+import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -41,11 +47,16 @@ CWD = RUNS / "cwd"  # empty git repo the agent works in
 HOME = RUNS / "home-empty"
 PROMPT = """Task: {task}
 
-Give the single shell command, for this macOS machine, that accomplishes the task, using a tool that is installed here.
+Find the best command-line tool on this macOS machine for this task. Prefer a tool built for the task; use a
+general-purpose tool only if no specific tool is installed. Prefer a simple command over chained pipelines or inline
+scripts (perl -e, python -c).
 {how}
-End your reply with exactly one line of the form:
-COMMAND: <command>"""
-INSPECT = "You may inspect the system with read-only commands but do not perform the task itself."
+End your reply with exactly one line:
+TOOL: <name>"""
+INSPECT = (
+    "If you don't know an installed tool for this, search this machine for it. "
+    "You may run read-only commands, but do not perform the task itself."
+)
 HOW = {
     "base": "Answer from your own knowledge.",
     "control": INSPECT,
@@ -53,14 +64,56 @@ HOW = {
     "skill": INSPECT,
     "forced": 'First run find-tool "<what you want to do>" to see which installed tools fit. '
     + INSPECT,
+    # Single-lookup design: the only command is find-tool (enforced by a hook); compare against `base`.
+    "lookup": 'You can run `find-tool "<what you want to do>"` in Bash: it lists the tools installed on this machine '
+    "that best match. No other commands are available. If nothing fits, rephrase once, then fall back to your own "
+    "knowledge. Do not perform the task itself.",
 }
+# Read-only probes agents use, beyond Claude Code's built-in read-only set (ls, cat, echo, head, grep, which, ...).
+# Every part of a compound command must be allowed. Narrow rules only: a generic `* --version` would also match
+# `rm -rf x --version`.
 ALLOW = [
-    "Bash(man:*)",
-    "Bash(which:*)",
-    "Bash(apropos:*)",
-    "Bash(whatis:*)",
-    "Bash(ls:*)",
+    "Bash(man *)",
+    "Bash(which *)",
+    "Bash(apropos *)",
+    "Bash(whatis *)",
+    "Bash(ls *)",
+    "Bash(command -v *)",
+    "Bash(type *)",
+    "Bash(printf *)",
+    "Bash(echo *)",
+    "Bash(col *)",
+    "Bash(file *)",
+    "Bash(mdfind *)",
+    "Bash(brew list *)",
+    "Bash(brew info *)",
+    "Bash(brew desc *)",
 ]
+
+
+def read_dirs() -> list[str]:
+    """Install locations agents search: $PATH dirs, their parents (/opt/homebrew, ~/.local) and /Applications.
+
+    Reads outside the working directory are denied even for allowed commands (`ls /usr/bin/x`), so these are added
+    as working directories; writes there still match no allow rule. Never /, $HOME or this repo (answer files).
+    """
+    home, out = Path.home(), []
+    for d in os.environ["PATH"].split(":") + ["/Applications"]:
+        for p in (Path(d), Path(d).parent):
+            if p.is_dir() and p not in (Path("/"), home) and ROOT not in (p, *p.parents) and p not in ROOT.parents:
+                out.append(str(p))
+    return list(dict.fromkeys(out))
+
+
+READ_DIRS = read_dirs()
+def hook_settings(*args: str) -> str:
+    cmd = " ".join(shlex.quote(a) for a in ("python3", str(HERE / "allow_loops.py"), *args))
+    return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": cmd, "timeout": 10}]}]}})
+
+
+LOOKUP_HOOKS = hook_settings("--only-find-tool")
+HOOKS = json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+    {"type": "command", "command": f"python3 {shlex.quote(str(HERE / 'allow_loops.py'))}", "timeout": 10}]}]}})
 LEAK = re.compile(
     r"eval-set|unfamiliar|label|alfa|tldr|bench|\.\./"
 )  # answer-key paths an agent must not touch
@@ -74,15 +127,16 @@ def used_commands(cmd: str) -> set[str]:
     return words
 
 
-def run(
-    task: str, stage: str, raw_dir: Path, n: int, model: str, plugin: Path, budget: float
-) -> dict:
+def claude_cmd(
+    prompt: str, stage: str, model: str, plugin: Path, budget: float
+) -> tuple[list[str], dict[str, str]]:
+    """The isolated `claude -p` command line and environment for a stage."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("MOSS_")}
     env |= {"HOME": str(HOME), "CLAUDE_CONFIG_DIR": str(HOME / ".claude")}
     cmd = [
         "claude",
         "-p",
-        PROMPT.format(task=task, how=HOW[stage]),
+        prompt,
         "--model",
         model,
         "--setting-sources",
@@ -96,11 +150,19 @@ def run(
         "--verbose",
         "--max-budget-usd",
         str(budget),
+        "--settings",
+        LOOKUP_HOOKS if stage == "lookup" else HOOKS,  # probe stages: approve read-only probes allow rules can't cover
+        "--add-dir",
+        *READ_DIRS,
     ]
     if stage == "base":
         cmd += ["--tools", ""]
     elif stage == "control":
         cmd += ["--tools", "Bash", "--allowedTools", *ALLOW]
+    elif stage == "lookup":
+        cmd += ["--tools", "Bash", "--allowedTools", "Bash(find-tool *)"]
+        env |= {k: v for k, v in os.environ.items() if k.startswith("MOSS_")}
+        env["PATH"] = f"{ROOT}:{env['PATH']}"
     elif stage == "controlsk":
         cmd += ["--tools", "Bash,Skill", "--allowedTools", *ALLOW]
     else:
@@ -115,6 +177,14 @@ def run(
         ]
         env |= {k: v for k, v in os.environ.items() if k.startswith("MOSS_")}
         env["PATH"] = f"{ROOT}:{env['PATH']}"
+    return cmd, env
+
+
+def run(
+    task: str, stage: str, raw_dir: Path, n: int, model: str, plugin: Path, budget: float
+) -> dict:
+    prompt = PROMPT.format(task=task, how=HOW[stage])
+    cmd, env = claude_cmd(prompt, stage, model, plugin, budget)
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=CWD, env=env)
     raw_dir.mkdir(parents=True, exist_ok=True)
     (raw_dir / f"{n}.jsonl").write_text(
@@ -134,9 +204,9 @@ def run(
     text = result.get("result") or ""
     final = next(
         (
-            ln.split("COMMAND:", 1)[1].strip().strip("`")
+            ln.split("TOOL:", 1)[1].strip().strip("`*")
             for ln in reversed(text.splitlines())
-            if "COMMAND:" in ln
+            if "TOOL:" in ln
         ),
         "",
     )
@@ -144,7 +214,7 @@ def run(
         "n": n,
         "stage": stage,
         "task": task,
-        "command": final,
+        "tool": final,
         "commands_run": bash,
         "skill_loaded": any(
             u["name"] == "Skill" and "find-tool" in json.dumps(u["input"]) for u in uses
@@ -205,7 +275,7 @@ def main() -> None:
         for ln in (HERE / args.tasks).read_text().splitlines()
         if ln.strip()
     ]
-    if args.stage == "base":
+    if args.stage == "base" or args.on == "all":
         todo = list(range(len(rows)))
     else:
         base = [
@@ -243,7 +313,7 @@ def main() -> None:
             want = set(rows[r["n"]][1].split(","))
             r |= {
                 "want": sorted(want),
-                "hit": bool(want & used_commands(r["command"])),
+                "hit": bool(want & used_commands(r["tool"])),
                 "plugin": str(args.plugin),
             }
             f.write(json.dumps(r) + "\n")
