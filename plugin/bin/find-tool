@@ -1,9 +1,30 @@
 #!/bin/sh
 # find-tool "<what you want to do>": the 5 most relevant installed tools (distinct), via `moss query`.
-# Needs MOSS_PROJECT_ID / MOSS_PROJECT_KEY for the project holding the index.
+# Needs Moss project credentials (`moss init`, or MOSS_PROJECT_ID / MOSS_PROJECT_KEY).
 # Queries 20 docs and keeps the first 5 distinct tools (tools with many subcommands would otherwise fill all 5).
+# Paths under $HOME are shown as ~/...
+#
+# On a terminal: tool name in color, description on the next line, fitted to the terminal width.
+# Piped (scripts, agents): one line per tool, `name [sub] (kind, path): description`.
+#   FIND_TOOL_INDEX        index name (default find-tool)
+#   FIND_TOOL_COLOR        ANSI color for tool names (default 1;36, bold cyan; empty or NO_COLOR set: no color)
+#   FIND_TOOL_DESC_CHARS   description length (default: terminal width - 2, or 160 when piped)
 [ -n "$1" ] || { echo 'usage: find-tool "<what you want to do>"' >&2; exit 2; }
-moss --json query "${FIND_TOOL_INDEX:-find-tool}" "$*" -k 20 | jq -r '
+if [ -t 1 ]; then
+  pretty=1
+  max=${FIND_TOOL_DESC_CHARS:-$(( $(tput cols 2>/dev/null || echo 80) - 2 ))}
+  color=${FIND_TOOL_COLOR-1;36}
+  [ -n "${NO_COLOR-}" ] && color=
+else
+  pretty=0 max=${FIND_TOOL_DESC_CHARS:-160} color=
+fi
+moss --json query "${FIND_TOOL_INDEX:-find-tool}" "$*" -k 20 |
+  jq -r --arg home "$HOME/" --arg pretty "$pretty" --arg color "$color" --argjson max "$max" '
   reduce .docs[] as $d ([]; if any(.[]; .metadata.name == $d.metadata.name) then . else . + [$d] end)
   | .[:5][]
-  | "\(.metadata.name)\(if .metadata.sub then " " + .metadata.sub else "" end) (\(.metadata.kind), \(.metadata.path)): \(.text | .[0:160])"'
+  | (.metadata.path | if startswith($home) then "~/" + .[($home | length):] else . end) as $path
+  | (.metadata.name + (if .metadata.sub then " " + .metadata.sub else "" end)) as $name
+  | if $pretty == "1" then
+      (if $color == "" then $name else "\u001b[\($color)m\($name)\u001b[0m" end)
+      + "  (\(.metadata.kind), \($path))\n  " + (.text | ltrimstr($name + ": ") | sub("^\\s+"; "") | .[0:$max])
+    else "\($name) (\(.metadata.kind), \($path)): \(.text | .[0:$max])" end'
