@@ -66,34 +66,61 @@ lines read before the first acceptable answer.
 
 ## 3. Agents: with vs without find-tool
 
-`agent_run.py` runs headless Claude Code (`claude -p`) per task. The agent must reply with `COMMAND: <cmd>` and is
-never allowed to perform the task (state-changing commands are denied). It needs `ANTHROPIC_API_KEY`
-(see `bench/.env.example`).
+`agent_run.py` runs headless Claude Code (`claude -p`) once per task. The agent is asked for the best tool installed
+on this machine (a tool built for the task over a general-purpose one; a simple command over inline scripts) and must
+end with `TOOL: <name>`. It never performs the task. It needs `ANTHROPIC_API_KEY` (see `bench/.env.example`).
 
 Isolation: API-key auth with an empty `HOME`/`CLAUDE_CONFIG_DIR`, `--setting-sources local`, `--strict-mcp-config`,
 and an empty git repository as the working directory, so no personal `CLAUDE.md`, hooks, plugins or MCP servers
-reach the agent. Note that enabling the Skill tool adds Claude Code's built-in skill list to every prompt, so the
-fair control for cost is `controlsk` (Skill tool, no find-tool), not bare Bash.
+reach the agent.
+
+**Design: one lookup vs memory.** Two conditions, same prompt:
+
+- `base`: no tools; the model names the tool from what it knows.
+- `lookup`: the agent may run only `find-tool "<what you want to do>"` (a PreToolUse hook, `allow_loops.py
+  --only-find-tool`, denies every other command). If nothing fits, it rephrases once, then falls back to its own
+  knowledge, as the shipped skill says.
+
+Neither condition can be blocked part-way through a search, so the comparison is clean. Run each condition several
+times (`--suffix=-r1`, `-r2`, ...), because answers vary between runs:
 
 ```sh
-M=claude-sonnet-5-5
-python3 bench/agent_run.py base      --tag sonnet-evalset --model $M   # no tools: answer from memory
-python3 bench/agent_run.py controlsk --tag sonnet-evalset --model $M   # misses, read-only shell
-python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M
-python3 bench/agent_run.py controlsk --tag sonnet-evalset --model $M --on hits --n 26 --suffix=-hits
-python3 bench/agent_run.py skill     --tag sonnet-evalset --model $M --on hits --n 26 --suffix=-hits
+M=claude-haiku-5-5
+for r in 1 2 3; do
+  python3 bench/agent_run.py base   --tag haiku-mine --model $M --tasks mine.tsv --on all --suffix=-r$r
+  python3 bench/agent_run.py lookup --tag haiku-mine --model $M --tasks mine.tsv --on all --suffix=-r$r
+done
+python3 bench/judge.py bench/runs/haiku-mine/*-r?.jsonl            # blind check of answers not in the labels
+python3 bench/compare_runs.py --tag haiku-mine --control base --treatment lookup --tasks mine.tsv
 ```
 
-Stages after `base` run only on base misses (`--on misses`) or a sample of base hits (`--on hits`, to measure the
-cost of using the skill when it isn't needed). Each run records the final command, whether it's correct, commands
-executed, whether find-tool ran, tokens and cost. Results: `bench/runs/<tag>/<stage>.jsonl`.
+**Write your own tasks** (`mine.tsv`, `intent<TAB>tool[,tool]`, in `bench/`): pick tools on your machine, especially
+ones you or your team wrote, describe the job from a user's point of view, and never name the tool. List every
+installed tool that does the job.
+
+**Scoring.** An answer is correct if its tool is in the task's list. Other answers go to `judge.py`: a judge model
+(Sonnet by default) sees only the task, the answered tool and that tool's man/`--help` text, never the condition or
+the label, and decides whether the tool is built for the task; the tool must also be on `$PATH` (checked directly).
+Verdicts are cached per (task, tool), so both conditions get the same verdict. `compare_runs.py` counts a task as
+correct when most repeats are, and reports an exact McNemar test on the tasks where the conditions differ.
+`--tasks` rescores stored runs against the current labels if you correct them later.
+
+**Exploration stages** (`control`, `controlsk`, `skill`, `forced`) let the agent search the machine with read-only
+commands. They are harder to make fair: `--permission-mode dontAsk` denies anything not explicitly allowed, every part
+of a compound command must be allowed, and reads outside the working directory are denied. `ALLOW`, `--add-dir` (the
+`$PATH` directories, their parents and `/Applications`) and the `allow_loops.py` hook (loops, `$(command -v x)`,
+`<tool> --help`) cover the common probes, but agents invent many one-off commands, and a denied probe makes the agent
+answer without the information. In our runs the control agent hit a denial far more often than the find-tool agent,
+so check `denials` per condition before trusting an exploration result.
 
 The `skill` stage uses the shipped plugin (`plugin/`); pass `--plugin DIR` to benchmark a copy with different
-wording. Four skill descriptions were compared before choosing the shipped one (v4):
+wording. Four skill descriptions were compared before choosing the shipped one (v4). These runs used an earlier
+setup that blocked many of the control's probes, so read the table for how often each wording got find-tool used,
+not for accuracy:
 
 | Version | Description style | Outcome |
 |---|---|---|
 | v1 | "use when unsure which tool" | never triggered |
-| v2 | mandatory; agents load the skill, then run find-tool | best accuracy, +69% cost on tasks the model already knew (Sonnet) |
-| v3 | "use instead of guessing; skip tools you know" | rarely triggered |
-| v4 | mandatory for non-everyday tools; run find-tool directly, no need to load the skill | near-v2 accuracy at about control cost (shipped) |
+| v2 | mandatory; agents load the skill, then run find-tool | best accuracy; +$0.0069 per task on tasks the model already knew (Sonnet) |
+| v3 | "use instead of guessing; skip tools you know" | rarely triggered, so no accuracy gain |
+| v4 | mandatory for non-everyday tools; run find-tool directly, no need to load the skill | nearly v2's accuracy; +$0.0006 per task on tasks the model already knew (Sonnet); shipped |
