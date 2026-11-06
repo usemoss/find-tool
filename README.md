@@ -17,16 +17,26 @@ It matters most for **coding agents**: a model can't know the CLIs you or your t
 which niche tools you have. The bundled Claude Code skill makes the agent run one `find-tool` lookup instead of
 guessing.
 
----
+## Benchmark results
 
-| Headless Claude Code, 3 runs per task | From memory | One `find-tool` lookup |
-|---|---|---|
-| CLIs the machine's owner wrote (3 tasks), Haiku and Sonnet | 3 of 9 runs | **9 of 9** |
-| Niche and unfamiliar tools (29 tasks), Sonnet 5.5 | 60 of 87 | **87 of 87** |
-| Niche and unfamiliar tools (29 tasks), Haiku 5.5 | 59 of 87 | **80 of 87** |
-| Public CLIs from tldr / NL2SH-ALFA (152 tasks), Sonnet 5.5 | 422 of 456 | 441 of 456 |
+Measured on one macOS machine (~1,500 executables). Details, methodology, significance tests and caveats are in
+[`bench/`](bench/README.md).
 
-Measured on one macOS machine; methodology, significance tests and caveats are in [`bench/`](bench/README.md).
+**Agents.** Headless Claude Code named the best installed tool for each task, either from memory or after one
+`find-tool` lookup (3 runs per task; answers outside the accepted list were checked by a blind judge):
+
+| Tasks | Model | From memory | One `find-tool` lookup |
+|---|---|---|---|
+| CLIs the machine's owner wrote (3 tasks) | Haiku 5.5 and Sonnet 5.5 | 3 of 9 runs | **9 of 9** |
+| Niche and unfamiliar tools (29 tasks) | Sonnet 5.5 | 60 of 87 | **87 of 87** |
+| | Haiku 5.5 | 59 of 87 | **80 of 87** |
+| Public CLIs from tldr / NL2SH-ALFA (152 tasks) | Sonnet 5.5 | 422 of 456 | **441 of 456** |
+| | Haiku 5.5 | 420 of 456 | 435 of 456 |
+
+The gain is largest for tools a model can't know (your own and niche CLIs) and small for well-known public tools.
+
+**Retrieval.** On the 152 public tasks, `find-tool` had an acceptable tool in its top 5 for 114 (median rank 2);
+`apropos` had one somewhere in its output for 115, but you'd read a median of 1,323 unranked lines to find it.
 
 ## Install
 
