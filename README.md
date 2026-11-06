@@ -30,6 +30,7 @@ It is built for two audiences:
 ## Requirements
 
 - Python 3.9+ (standard library only)
+- [Moss Portal Account (sign up for free)](https://portal.usemoss.dev/)
 - [Moss CLI](https://docs.moss.dev/docs/integrations/moss-cli): `pip install moss-cli`
 - [`jq`](https://jqlang.org)
 - A Moss project (semantic search uses the cloud model; the CLI's offline mode is keyword-only and holds one index)
@@ -38,8 +39,8 @@ Developed and tested on macOS. Indexing relies on `man`, `col` and `--help`, so 
 
 ## Setup
 
-1. **Credentials.** Create a Moss project, then a project key (`moss login`, `moss keys create --project <id>`).
-   Copy `.env.example` to `.env` and fill it in, or export the variables:
+1. **Credentials.** Go to https://portal.usemoss.dev, login, and create a Moss project, then a project key (`moss login`,
+   `moss keys create --project <id>`). Copy `.env.example` to `.env` and fill it in, or export the variables:
 
    ```sh
    export MOSS_PROJECT_ID=...
