@@ -2,7 +2,12 @@
 
 Find the right command-line tool **installed on your machine** by describing what you want to do.
 
-![find-tool answering three queries on a macOS machine](demo/find-tool.gif)
+<img
+  width="800"
+  height="300"
+  alt="example find-tool CLI commands"
+  src="https://github.com/user-attachments/assets/0af14c9c-9764-453f-b5c2-b3d5b34784c5"
+/>
 
 `find-tool` indexes every executable on your `$PATH` (man pages, `--help`, package descriptions, subcommands) and
 your installed agent skills into a [Moss](https://moss.dev) semantic search index, and answers with the 5 most
@@ -11,6 +16,8 @@ relevant tools via the [Moss CLI](https://docs.moss.dev/docs/integrations/moss-c
 It matters most for **coding agents**: a model can't know the CLIs you or your team wrote, and often doesn't know
 which niche tools you have. The bundled Claude Code skill makes the agent run one `find-tool` lookup instead of
 guessing.
+
+---
 
 | Headless Claude Code, 3 runs per task | From memory | One `find-tool` lookup |
 |---|---|---|
