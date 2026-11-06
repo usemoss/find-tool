@@ -162,7 +162,7 @@ def claude_cmd(
     elif stage == "lookup":
         cmd += ["--tools", "Bash", "--allowedTools", "Bash(find-tool *)"]
         env |= {k: v for k, v in os.environ.items() if k.startswith("MOSS_")}
-        env["PATH"] = f"{ROOT}:{env['PATH']}"
+        env["PATH"] = f"{ROOT / 'plugin' / 'bin'}:{env['PATH']}"
     elif stage == "controlsk":
         cmd += ["--tools", "Bash,Skill", "--allowedTools", *ALLOW]
     else:
@@ -176,7 +176,7 @@ def claude_cmd(
             "Bash(find-tool:*)",
         ]
         env |= {k: v for k, v in os.environ.items() if k.startswith("MOSS_")}
-        env["PATH"] = f"{ROOT}:{env['PATH']}"
+        env["PATH"] = f"{ROOT / 'plugin' / 'bin'}:{env['PATH']}"
     return cmd, env
 
 
