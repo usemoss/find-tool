@@ -60,9 +60,17 @@ Requires:
    - Login to https://portal.usemoss.dev
    - create a project and a project key (or `moss login moss keys create --project <id>`)
    
-   Then run `moss init` to save them to `~/.moss/config.json`, where `find-tool`
-   and your agent's shell will find them. (Alternatively export `MOSS_PROJECT_ID` and `MOSS_PROJECT_KEY`; see
-   `.env.example`.)
+   Then save them where `find-tool` (and the plugin) will find them in any directory:
+
+   ```sh
+   mkdir -p ~/.config/find-tool && touch ~/.config/find-tool/.env && chmod 600 ~/.config/find-tool/.env
+   printf 'MOSS_PROJECT_ID=<id>\nMOSS_PROJECT_KEY=<key>\n' > ~/.config/find-tool/.env   # then fill in both values
+   ```
+
+   This file overrides any `MOSS_*` variables or `moss init` config your other projects use; point
+   `FIND_TOOL_ENV` at another file to move it. Without it, `find-tool` falls back to `MOSS_PROJECT_ID` /
+   `MOSS_PROJECT_KEY` and `~/.moss/config.json`. The `moss` commands below need the same credentials: run them
+   in a shell where you've loaded the file (`set -a; . ~/.config/find-tool/.env; set +a`).
 
 3. **Build the index** (about a minute for ~1,500 tools):
 

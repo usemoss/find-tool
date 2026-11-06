@@ -1,6 +1,8 @@
 #!/bin/sh
 # find-tool "<what you want to do>": the 5 most relevant installed tools (distinct), via `moss query`.
-# Needs Moss project credentials (`moss init`, or MOSS_PROJECT_ID / MOSS_PROJECT_KEY).
+# Moss credentials: MOSS_PROJECT_ID and MOSS_PROJECT_KEY from ~/.config/find-tool/.env (or the file in
+# FIND_TOOL_ENV), which override any MOSS_* already set; without that file, the Moss CLI's own lookup
+# (MOSS_* env vars, then ~/.moss/config.json from `moss init`).
 # Queries 20 docs and keeps the first 5 distinct tools (tools with many subcommands would otherwise fill all 5).
 # Paths under $HOME are shown as ~/...
 #
@@ -10,6 +12,17 @@
 #   FIND_TOOL_COLOR        ANSI color for tool names (default 1;36, bold cyan; empty or NO_COLOR set: no color)
 #   FIND_TOOL_DESC_CHARS   description length (default: terminal width - 2, or 160 when piped)
 [ -n "$1" ] || { echo 'usage: find-tool "<what you want to do>"' >&2; exit 2; }
+env_file=${FIND_TOOL_ENV:-$HOME/.config/find-tool/.env}
+if [ -n "${FIND_TOOL_ENV-}" ] || [ -e "$env_file" ]; then
+  # Read (never source) KEY=value, optionally `export`-prefixed and quoted; the last match wins.
+  get() { sed -n "s/^[[:space:]]*\(export[[:space:]]*\)\{0,1\}$1[[:space:]]*=[[:space:]]*//p" "$env_file" 2>/dev/null |
+    tail -n 1 | sed "s/[[:space:]]*\$//; s/^[\"']\(.*\)[\"']\$/\1/"; }
+  MOSS_PROJECT_ID=$(get MOSS_PROJECT_ID) MOSS_PROJECT_KEY=$(get MOSS_PROJECT_KEY)
+  [ -n "$MOSS_PROJECT_ID" ] && [ -n "$MOSS_PROJECT_KEY" ] ||
+    { echo "find-tool: $env_file must set MOSS_PROJECT_ID and MOSS_PROJECT_KEY" >&2; exit 2; }
+  export MOSS_PROJECT_ID MOSS_PROJECT_KEY
+  FIND_TOOL_INDEX=${FIND_TOOL_INDEX:-$(get FIND_TOOL_INDEX)}
+fi
 if [ -t 1 ]; then
   pretty=1
   max=${FIND_TOOL_DESC_CHARS:-$(( $(tput cols 2>/dev/null || echo 80) - 2 ))}
