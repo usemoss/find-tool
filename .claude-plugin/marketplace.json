@@ -1,0 +1,12 @@
+{
+  "name": "find-tool",
+  "description": "find-tool: find installed command-line tools by describing the job (Moss semantic search).",
+  "owner": { "name": "Burhan Qaddoumi" },
+  "plugins": [
+    {
+      "name": "find-tool",
+      "source": "./plugin",
+      "description": "Skill + find-tool command: agents look up the right installed CLI (including your own) instead of guessing."
+    }
+  ]
+}
