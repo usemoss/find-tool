@@ -4,12 +4,12 @@ Find the right command-line tool **installed on your machine** by describing wha
 
 ```console
 $ find-tool "convert a folder of PNG icon sizes into a macOS .icns file"
-tiff2icns (cli): tiff2icns: tiff2icns – converts TIFF to icns format ...
-iconutil (cli): iconutil: iconutil – Utility to convert between '.iconset' and '.icns' files ...
+tiff2icns (cli, /usr/bin/tiff2icns): tiff2icns: tiff2icns – converts TIFF to icns format ...
+iconutil (cli, /usr/bin/iconutil): iconutil: iconutil – Utility to convert between '.iconset' and '.icns' files ...
 ...
 $ find-tool "set an organization secret for specific repositories"
-gh secret (cli): gh secret: Manage GitHub secrets. Secrets can be set at the repository, or organization level ...
-docker pass (cli): docker pass: Docker Pass Secrets Manager Plugin (beta) ...
+gh secret (cli, /opt/homebrew/bin/gh): gh secret: Manage GitHub secrets. Secrets can be set at the repository, or organization level ...
+docker pass (cli, /usr/local/bin/docker): docker pass: Docker Pass Secrets Manager Plugin (beta) ...
 ...
 ```
 
@@ -92,8 +92,9 @@ Each query takes about 2–3 seconds: the Moss CLI loads the index on every call
 The agent's shell needs `find-tool` on `PATH` and the `MOSS_*` variables set; allow it with `Bash(find-tool:*)`.
 
 The skill's description tells the agent to run `find-tool` once, directly, before probing for any non-everyday tool,
-and to skip it for everyday commands. That wording was chosen by benchmark (below): softer wording was almost never
-triggered, and wording that made the agent load the skill first added a round trip to every task.
+and to skip it for everyday commands; if nothing fits, the agent rephrases once, then falls back to its own knowledge.
+That wording was chosen by benchmark ([`bench/`](bench/README.md)): softer wording was almost never triggered, and
+wording that made the agent load the skill first added a round trip to every task.
 
 ## How well does it work?
 
@@ -109,19 +110,47 @@ installed on the machine, with acceptable tools agreed by three LLM labelers):
 | `find-tool` | 114/152 in its top 5 (median rank of first hit: 2) | 5 lines |
 | `apropos` | 115/152 anywhere in its output (median first hit: line 176) | median 1,323 lines |
 
-**Agents** (headless Claude Code; tasks the model got wrong from memory, then retried with read-only shell access,
-with vs without `find-tool` + skill):
+**Agents.** Headless Claude Code was asked to name the best installed tool for each task, in two ways: from memory
+(no tools), and after one `find-tool` lookup (the only command it could run; if nothing fit, it fell back to its own
+knowledge). Each task was run 3 times per condition. Answers outside a task's accepted list were checked by a blind
+judge and counted only if the tool is installed and built for the task.
 
-| Model | Task set | Control fixes | With find-tool | Cost per fix |
-|---|---|---|---|---|
-| Sonnet | unfamiliar tools (personal, niche, lesser-known OS utilities) | 5/12 | 9/12 | $0.032 → $0.018 |
-| Haiku | unfamiliar tools | 1/14 | 8/14 | $0.016 → $0.002 |
-| Haiku | benchmark tasks | 5/29 | 13/29 | $0.0063 → $0.0027 |
-| Sonnet | benchmark tasks | 12/26 | 12/26 | $0.026 → $0.027 |
+| Model | Tasks | From memory | One `find-tool` lookup |
+|---|---|---|---|
+| Haiku 5.5 | 29 unfamiliar tools on this machine | 59 of 87 runs | **80 of 87** |
+| Sonnet 5.5 | 29 unfamiliar tools on this machine | 60 of 87 | **87 of 87** |
+| Haiku 5.5 | 152 benchmark tasks (public tools) | 420 of 456 | 435 of 456 |
+| Sonnet 5.5 | 152 benchmark tasks (public tools) | 422 of 456 | **441 of 456** |
 
-On tasks the model already answers correctly, the skill added about 6% cost for Sonnet and 12% for Haiku.
-In short: `find-tool` helps most when the model doesn't know the tool — niche or personal tools, or smaller models —
-and costs little when it isn't needed. A strong model on well-known tools gains nothing.
+Counting a task as correct when most of its 3 runs were: on the unfamiliar tools, Haiku went from 20 to 27 tasks
+(p = 0.039) and Sonnet from 20 to 29 (p = 0.004); on the benchmark tasks, Haiku from 141 to 146 (p = 0.23, not
+significant) and Sonnet from 142 to 148 (p = 0.031). p is an exact McNemar test on the tasks where the two conditions
+differed.
+
+The unfamiliar tools, by kind:
+
+| Kind (tasks) | Haiku: memory → lookup | Sonnet: memory → lookup |
+|---|---|---|
+| CLIs written by the machine's owner (3) | 3 → **9** of 9 | 3 → **9** of 9 |
+| Niche public tools installed with `uv tool` (5) | 9 → **15** of 15 | 12 → **15** of 15 |
+| Less-common Homebrew packages (12) | 23 → **33** of 36 | 23 → **36** of 36 |
+| Lesser-known macOS built-ins (9) | 24 → 23 of 27 | 22 → **27** of 27 |
+
+In short: a model can't know the CLIs you or your team wrote, and it often doesn't know which niche tools you have
+installed. One `find-tool` lookup fixes that for both a small and a large model. On well-known public tools the gain
+is small. The lookup adds one turn per task.
+
+**About the unfamiliar-tool tasks.** These 29 tasks were written for the benchmark machine (macOS, ~1,500
+executables) and are not published, since they only make sense there. They use tools a model is unlikely to know or
+to expect: three CLIs the machine's owner wrote (discord-time, vid2webp, flowmark-rs), niche tools installed with
+`uv tool`, less-common Homebrew packages, and lesser-known macOS built-ins. Tasks never name the tool. Two labelling
+fixes were made after the runs and applied to both conditions (a missing equivalent tool added, a non-Apple tool
+removed from two "built-in macOS" tasks), and one task was dropped because its answer was not a CLI. The fallback
+sentence in the lookup prompt was added after a first run showed the agent dropping correct answers when
+`find-tool` missed; it matches the shipped skill.
+
+**Try it with your own tools and agent:** write a few tasks for tools on your machine, especially ones you or your
+team wrote (`intent<TAB>tool` in a TSV), and run the single-lookup design in [`bench/`](bench/README.md#3-agents-with-vs-without-find-tool).
 
 ## Repository layout
 
