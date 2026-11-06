@@ -4,7 +4,54 @@ Scripts to measure (1) whether `find-tool` retrieves the right installed tool, a
 choose the right command. Every generated file (task lists, labels, results) is specific to the machine it was built
 on and is git-ignored; rebuild them on yours.
 
-Run all commands from the repository root with the `MOSS_*` variables set (see `.env.example`).
+Run all commands from the repository root with Moss credentials available (`moss init`, or the `MOSS_*` variables in
+`.env.example`).
+
+## Results
+
+Measured on one macOS developer machine (~1,500 executables); your numbers will differ with your installed tools.
+
+**Retrieval** (152 tasks from the [tldr](https://huggingface.co/datasets/neulab/tldr) and
+[NL2SH-ALFA](https://huggingface.co/datasets/westenfelder/NL2SH-ALFA) benchmarks, filtered to non-everyday tools
+installed on the machine, with acceptable tools agreed by three LLM labelers):
+
+| | Finds an acceptable tool | What you read |
+|---|---|---|
+| `find-tool` | 114/152 in its top 5 (median rank of first hit: 2) | 5 lines |
+| `apropos` | 115/152 anywhere in its output (median first hit: line 176) | median 1,323 lines |
+
+**Agents** (single-lookup design, section 3). Headless Claude Code named the best installed tool for each task from
+memory (no tools) and after one `find-tool` lookup (the only command it could run; if nothing fit, it fell back to its
+own knowledge). Each task ran 3 times per condition. Answers outside a task's accepted list were checked by a blind
+judge and counted only if the tool is installed and built for the task.
+
+| Model | Tasks | From memory | One `find-tool` lookup |
+|---|---|---|---|
+| Haiku 5.5 | 29 unfamiliar tools on this machine | 59 of 87 runs | **80 of 87** |
+| Sonnet 5.5 | 29 unfamiliar tools on this machine | 60 of 87 | **87 of 87** |
+| Haiku 5.5 | 152 benchmark tasks (public tools) | 420 of 456 | 435 of 456 |
+| Sonnet 5.5 | 152 benchmark tasks (public tools) | 422 of 456 | **441 of 456** |
+
+Counting a task as correct when most of its 3 runs were: on the unfamiliar tools, Haiku went from 20 to 27 tasks
+(p = 0.039) and Sonnet from 20 to 29 (p = 0.004); on the benchmark tasks, Haiku from 141 to 146 (p = 0.23, not
+significant) and Sonnet from 142 to 148 (p = 0.031). p is an exact McNemar test on the tasks where the two conditions
+differed.
+
+| Unfamiliar tools, by kind (tasks) | Haiku: memory → lookup | Sonnet: memory → lookup |
+|---|---|---|
+| CLIs written by the machine's owner (3) | 3 → **9** of 9 | 3 → **9** of 9 |
+| Niche public tools installed with `uv tool` (5) | 9 → **15** of 15 | 12 → **15** of 15 |
+| Less-common Homebrew packages (12) | 23 → **33** of 36 | 23 → **36** of 36 |
+| Lesser-known macOS built-ins (9) | 24 → 23 of 27 | 22 → **27** of 27 |
+
+**About the unfamiliar-tool tasks.** These 29 tasks were written for the benchmark machine and are not published,
+since they only make sense there. They use tools a model is unlikely to know or to expect: three CLIs the machine's
+owner wrote (discord-time, vid2webp, flowmark-rs), niche tools installed with `uv tool`, less-common Homebrew
+packages, and lesser-known macOS built-ins. Tasks never name the tool. Two labelling fixes were made after the runs and
+applied to both conditions (a missing equivalent tool added, a non-Apple tool removed from two "built-in macOS"
+tasks), and one task was dropped because its answer was not a CLI. The fallback sentence in the lookup prompt was
+added after a first run showed the agent dropping correct answers when `find-tool` missed; it matches the shipped
+skill.
 
 ## 1. Build a task set
 
