@@ -6,4 +6,4 @@
 moss --json query "${FIND_TOOL_INDEX:-find-tool}" "$*" -k 20 | jq -r '
   reduce .docs[] as $d ([]; if any(.[]; .metadata.name == $d.metadata.name) then . else . + [$d] end)
   | .[:5][]
-  | "\(.metadata.name)\(if .metadata.sub then " " + .metadata.sub else "" end) (\(.metadata.kind)): \(.text | .[0:160])"'
+  | "\(.metadata.name)\(if .metadata.sub then " " + .metadata.sub else "" end) (\(.metadata.kind), \(.metadata.path)): \(.text | .[0:160])"'
