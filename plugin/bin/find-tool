@@ -11,7 +11,11 @@
 #   FIND_TOOL_INDEX        index name (default find-tool)
 #   FIND_TOOL_COLOR        ANSI color for tool names (default 1;36, bold cyan; empty or NO_COLOR set: no color)
 #   FIND_TOOL_DESC_CHARS   description length (default: terminal width - 2, or 160 when piped)
-[ -n "$1" ] || { echo 'usage: find-tool "<what you want to do>"' >&2; exit 2; }
+#
+# find-tool --init      build the index from $PATH and agent skills, replacing any existing one (~1-2 min)
+# find-tool --add-new   index only CLIs not in the index yet, and refresh skills (keeps the index online)
+# Both run `<tool> --help` for user-installed tools only; every call is logged (path printed at the end).
+[ -n "$1" ] || { echo 'usage: find-tool "<what you want to do>" | --init | --add-new' >&2; exit 2; }
 env_file=${FIND_TOOL_ENV:-$HOME/.config/find-tool/.env}
 if [ -n "${FIND_TOOL_ENV-}" ] || [ -e "$env_file" ]; then
   # Read (never source) KEY=value, optionally `export`-prefixed and quoted; the last match wins.
@@ -23,6 +27,23 @@ if [ -n "${FIND_TOOL_ENV-}" ] || [ -e "$env_file" ]; then
   export MOSS_PROJECT_ID MOSS_PROJECT_KEY
   FIND_TOOL_INDEX=${FIND_TOOL_INDEX:-$(get FIND_TOOL_INDEX)}
 fi
+index=${FIND_TOOL_INDEX:-find-tool}
+case $1 in --init|--add-new)
+  dir=$(mktemp -d) || exit 1
+  build=$(dirname "$(readlink -f "$0")")/../build.py
+  if [ "$1" = --add-new ]; then
+    moss --json doc get "$index" | jq -r '.[] | select(.metadata.kind == "cli") | .metadata.name' > "$dir/skip" &&
+      python3 "$build" --skip "$dir/skip" --log "$dir/help-calls.log" > "$dir/docs.json" &&
+      moss doc add "$index" -f "$dir/docs.json" --upsert --wait
+  else
+    python3 "$build" --log "$dir/help-calls.log" > "$dir/docs.json" &&
+      { ! moss index get "$index" > /dev/null 2>&1 || moss index delete "$index" -y; } &&
+      moss index create "$index" -f "$dir/docs.json" --wait
+  fi
+  status=$?
+  echo "find-tool: documents and --help log in $dir" >&2
+  exit $status ;;
+esac
 if [ -t 1 ]; then
   pretty=1
   max=${FIND_TOOL_DESC_CHARS:-$(( $(tput cols 2>/dev/null || echo 80) - 2 ))}
@@ -31,7 +52,7 @@ if [ -t 1 ]; then
 else
   pretty=0 max=${FIND_TOOL_DESC_CHARS:-160} color=
 fi
-moss --json query "${FIND_TOOL_INDEX:-find-tool}" "$*" -k 20 |
+moss --json query "$index" "$*" -k 20 |
   jq -r --arg home "$HOME/" --arg pretty "$pretty" --arg color "$color" --argjson max "$max" '
   reduce .docs[] as $d ([]; if any(.[]; .metadata.name == $d.metadata.name) then . else . + [$d] end)
   | .[:5][]

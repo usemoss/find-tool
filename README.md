@@ -72,24 +72,9 @@ Requires:
 
    This file overrides any `MOSS_*` variables or `moss init` config your other projects use; point
    `FIND_TOOL_ENV` at another file to move it. Without it, `find-tool` falls back to `MOSS_PROJECT_ID` /
-   `MOSS_PROJECT_KEY` and `~/.moss/config.json`. The `moss` commands below need the same credentials: run them
-   in a shell where you've loaded the file (`set -a; . ~/.config/find-tool/.env; set +a`).
+   `MOSS_PROJECT_KEY` and `~/.moss/config.json`.
 
-2. **Build the index** (about a minute for ~1,500 tools):
-
-   ```sh
-   git clone https://github.com/usemoss/find-tool && cd find-tool
-
-   # build CLI tool records
-   python3 build.py --log help-calls.log > docs.json
-
-   # create Moss CLI tools index
-   moss index create find-tool -f docs.json --wait
-   ```
-
-   After installing new tools, rebuild and run `moss doc add find-tool -f docs.json --upsert --wait`.
-
-3. **Claude Code plugin** (user scope, all projects). It adds the skill and puts `find-tool` on the agent's `PATH`:
+2. **Claude Code plugin** (user scope, all projects). It adds the skills and puts `find-tool` on the agent's `PATH`:
 
    ```sh
    claude plugin marketplace add usemoss/find-tool
@@ -100,9 +85,15 @@ Requires:
    `claude plugin update find-tool@find-tool`. To skip the permission prompt, allow `Bash(find-tool *)` in your
    settings.
 
-4. **On your own command line** (optional):
+3. **Build the index** (1–2 minutes): run `/find-tool:init` in Claude Code. It indexes your shell's `PATH` plus the
+   `bin/` folders of enabled plugins, and replaces any existing index. After installing new tools, run
+   `/find-tool:add-new`: it indexes only CLIs that aren't in the index yet (fast; doesn't remove uninstalled tools).
+
+4. **On your own command line** (optional), from a clone of this repository:
+
    ```sh
    ln -s "$PWD/plugin/bin/find-tool" ~/.local/bin/find-tool
+   find-tool --init      # or --add-new; same as the slash commands, indexing your shell's PATH
    ```
 
 ## Usage
@@ -129,14 +120,14 @@ piped (scripts, agents), each tool is one line: `name [subcommand] (kind, path):
 **What gets indexed:** the first match for every name on `$PATH` (as your shell resolves it), one document per
 subcommand (`gh secret`, `kubectl delete`, ...), and skills under `~/.claude`, `~/.codex` and `~/.agents`. `--help` is
 only run for user-installed tools (never system binaries), with no stdin, a timeout and an empty working directory;
-every executed command is written to `--log`.
+every executed command is logged, and the log's location is printed at the end.
 
 ## Repository layout
 
 ```
-plugin/            Claude Code plugin: the find-tool skill and bin/find-tool (the query command)
+plugin/            Claude Code plugin: skills (find-tool, init, add-new), bin/find-tool, build.py
 demo/              the README GIF and its vhs tape (vhs demo/find-tool.tape)
-build.py           builds the index documents (JSON on stdout)
+build.py           link to plugin/build.py: builds the index documents (JSON on stdout)
 eval.py            retrieval eval: find-tool vs apropos on an intent<TAB>tool file
 queries.tsv        30 example intents for macOS
 bench/             agent and retrieval benchmarks (see bench/README.md)
