@@ -63,8 +63,11 @@ Requires:
    Then save them where `find-tool` (and the plugin) will find them in any directory:
 
    ```sh
-   mkdir -p ~/.config/find-tool && touch ~/.config/find-tool/.env && chmod 600 ~/.config/find-tool/.env
-   printf 'MOSS_PROJECT_ID=<id>\nMOSS_PROJECT_KEY=<key>\n' > ~/.config/find-tool/.env   # then fill in both values
+   mkdir -p ~/.config/find-tool && touch ~/.config/find-tool/.env && \
+       chmod 600 ~/.config/find-tool/.env
+
+   # fill in both values
+   printf 'MOSS_PROJECT_ID=<id>\nMOSS_PROJECT_KEY=<key>\n' > ~/.config/find-tool/.env
    ```
 
    This file overrides any `MOSS_*` variables or `moss init` config your other projects use; point
@@ -106,7 +109,8 @@ Requires:
 
 ```sh
 find-tool "transcribe a WAV file to text"
-moss --json query find-tool "transcribe a WAV file to text" -k 20 | jq '.docs[].metadata.name'   # raw results
+moss --json query find-tool "transcribe a WAV file to text" -k 20 \
+    | jq '.docs[].metadata.name'   # raw results
 ```
 
 Each query takes 2–3 seconds (the Moss CLI loads the index on every call).
