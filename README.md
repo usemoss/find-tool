@@ -66,7 +66,7 @@ Requires:
    mkdir -p ~/.config/find-tool && touch ~/.config/find-tool/.env && \
        chmod 600 ~/.config/find-tool/.env
 
-   # fill in both values
+   # replace <id> and <key> with your values
    printf 'MOSS_PROJECT_ID=<id>\nMOSS_PROJECT_KEY=<key>\n' > ~/.config/find-tool/.env
    ```
 
@@ -75,7 +75,7 @@ Requires:
    `MOSS_PROJECT_KEY` and `~/.moss/config.json`. The `moss` commands below need the same credentials: run them
    in a shell where you've loaded the file (`set -a; . ~/.config/find-tool/.env; set +a`).
 
-3. **Build the index** (about a minute for ~1,500 tools):
+2. **Build the index** (about a minute for ~1,500 tools):
 
    ```sh
    git clone https://github.com/usemoss/find-tool && cd find-tool
@@ -89,7 +89,7 @@ Requires:
 
    After installing new tools, rebuild and run `moss doc add find-tool -f docs.json --upsert --wait`.
 
-4. **Claude Code plugin** (user scope, all projects). It adds the skill and puts `find-tool` on the agent's `PATH`:
+3. **Claude Code plugin** (user scope, all projects). It adds the skill and puts `find-tool` on the agent's `PATH`:
 
    ```sh
    claude plugin marketplace add usemoss/find-tool
@@ -100,7 +100,7 @@ Requires:
    `claude plugin update find-tool@find-tool`. To skip the permission prompt, allow `Bash(find-tool *)` in your
    settings.
 
-5. **On your own command line** (optional):
+4. **On your own command line** (optional):
    ```sh
    ln -s "$PWD/plugin/bin/find-tool" ~/.local/bin/find-tool
    ```
